@@ -1,5 +1,15 @@
 import csv
+import tensorflow as tf
+import numpy as np
 
+def read_pic(path,pic_list,idx,cnn):
+    image_path = path + '/' + pic_list[idx]
+    image = cnn.extract(image_path)
+    img1 = np.mean(image[:, :, :86], 2);
+    img2 = np.mean(image[:, :, 86:171], 2);
+    img3 = np.mean(image[:, :, 171:], 2);
+
+    return np.stack((img1,img2,img3),axis=2)
 
 def get_all_task(path):
     type_list = []

@@ -264,7 +264,7 @@ class OrchestrateAgent(Agent):
             apply_gradients(zip(self.act_gradients, self.params))
 
         # Network paramter saver
-        self.saver = tf.compat.v1.train.Saver(max_to_keep=1000)
+        self.saver = tf.train.Saver(max_to_keep=1000)
         self.sess.run(tf.global_variables_initializer())
 
     def orchestrate_network(self, node_inputs, gcn_outputs, cluster_inputs,

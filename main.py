@@ -2,16 +2,22 @@ import math
 import time
 import json
 import sys
+import matplotlib.pyplot as plt
 from algorithm.cMMAC import *
 from algorithm.GPG import *
 from env.platform import *
 from env.env_run import *
+from image_similarity_measures.evaluate import *
+from CNN import CNN
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
 def flatten(list):
     return [y for x in list for y in x]
+
+def flatten3(list):
+    return [x for z in list for y in z for x in y]
 
 
 def calculate_reward(master1, master2, cur_done, cur_undone):
@@ -68,7 +74,10 @@ def execution(RUN_TIMES, BREAK_POINT, TRAIN_TIMES, CHO_CYCLE):
     gamma = 0.9
     learning_rate = 1e-3
     action_dim = 7
-    state_dim = 88
+    # state_dim = 88
+    state_dim = 88+28*28*3
+    fcp = 0.965
+    pre_CHO_CYCLE = CHO_CYCLE
     node_input_dim = 24
     cluster_input_dim = 24
     hid_dims = [16, 8]
@@ -79,7 +88,7 @@ def execution(RUN_TIMES, BREAK_POINT, TRAIN_TIMES, CHO_CYCLE):
     entropy_weight_min = 0.0001
     entropy_weight_decay = 1e-3
     # Parameters related to GPU
-    worker_num_gpu = 0
+    worker_num_gpu = 1
     worker_gpu_fraction = 0.1
     #####################################################################
     ########### Init ###########
@@ -97,16 +106,58 @@ def execution(RUN_TIMES, BREAK_POINT, TRAIN_TIMES, CHO_CYCLE):
     episode_rewards = []
     record_all_order_response_rate = []
     sess = tf.Session()
-    tf.set_random_seed(1)
+    tf.set_random_seed(20221022)
     q_estimator = Estimator(sess, action_dim, state_dim, 2, scope="q_estimator", summaries_dir=log_dir)
     sess.run(tf.global_variables_initializer())
     replay = ReplayMemory(memory_size=1e+6, batch_size=int(3e+3))
     policy_replay = policyReplayMemory(memory_size=1e+6, batch_size=int(3e+3))
-    saver = tf.compat.v1.train.Saver()
+    saver = tf.train.Saver()
     global_step1 = 0
     global_step2 = 0
-    all_task1 = get_all_task('./data/Task_1.csv')
-    all_task2 = get_all_task('./data/Task_2.csv')
+    all_task1 = get_all_task('./data/new_Task_1.csv')
+    all_task2 = get_all_task('./data/new_Task_2.csv')
+    # all_task1 = get_all_task('./data/Task_1.csv')
+    # all_task2 = get_all_task('./data/Task_2.csv')
+
+    pic_path = "./pic/"
+    pic_list = os.listdir(pic_path)
+    sim = []
+    pic_np_list = []
+
+    READ_FROM_FILE = True
+
+    cnn = CNN("./mmm/vgg19_weights_tf_dim_ordering_tf_kernels.h5")
+
+    print("读取图片中....")
+
+    for i in range(BREAK_POINT):
+        if not READ_FROM_FILE:
+            res = 0
+            if i != 0:
+                res = evaluation(pic_path+"/"+pic_list[i-1],pic_path+"/"+pic_list[i],{"ssim"})["ssim"]
+            sim.append(res)
+            print("similarity:", res)
+        pic_l = flatten3(read_pic(pic_path, pic_list, i,cnn).tolist())
+        pic_np = np.array([pic_l, pic_l],dtype="int32")
+        pic_np_list.append(pic_np)
+        print("pic %d complete!" % i)
+
+    print("pic num:",len(pic_np_list))
+    print("图片读取完毕!")
+
+    if READ_FROM_FILE:
+        with open("sim.txt", "r") as f:
+            sim = eval(f.readline())
+    else:
+        with open("sim.txt", "w") as f:
+            f.write("[")
+            for i in sim:
+                f.write(str(i) + ",")
+            f.write("]")
+
+    plt.plot(range(1, len(sim)), sim[1:])
+    plt.show()
+
 
     config = tf.ConfigProto(device_count={'GPU': worker_num_gpu},
                             gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=worker_gpu_fraction))
@@ -129,9 +180,15 @@ def execution(RUN_TIMES, BREAK_POINT, TRAIN_TIMES, CHO_CYCLE):
         context = [1, 1]
         ############ Set up according to your own needs  ###########
         # The parameters here are set only to support the operation of the program, and may not be consistent with the actual system
-        deploy_state = [[0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1],
-                        [0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0], [0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 1],
-                        [0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1]]
+        # deploy_state = [[0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1],
+        #                 [0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0], [0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 1],
+        #                 [0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1]]
+        # deploy_state = [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        #                 [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        #                 [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+        deploy_state = [[0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0],
+                        [0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0], [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0],
+                        [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1]]
 
         # Create clusters based on the hardware resources you need
         node1_1 = Node(100.0, 4.0, [], [])  # (cpu, mem,...)
@@ -172,11 +229,32 @@ def execution(RUN_TIMES, BREAK_POINT, TRAIN_TIMES, CHO_CYCLE):
                         master2.node_list[j].mem = master2.node_list[j].mem - POD_MEM * service_coefficient[ii]
                         master2.node_list[j].service_list.append(docker)
 
+        pre_sum = 0
+        CHO_CYCLE = pre_CHO_CYCLE
+
         ########### Each slot ###########
         for slot in range(BREAK_POINT):
+
             cur_time = cur_time + SLOT_TIME
             ########### Each frame ###########
-            if slot % CHO_CYCLE == 0 and slot != 0:
+            if (slot-pre_sum) % CHO_CYCLE == 0 and slot != 0:
+
+                # print("slot:", slot)
+                #修改frame
+
+                pre_sum = slot
+                delta = sim[slot] - fcp
+                # print("delta",delta)
+                inc = round(np.random.normal(delta*100,1))
+                # print("inc:",inc)
+                if  delta > 0:
+                    CHO_CYCLE = min(CHO_CYCLE + inc, int(pre_CHO_CYCLE*1.5))
+                else:
+                    CHO_CYCLE = max(CHO_CYCLE + inc, int(pre_CHO_CYCLE*0.5))
+
+
+                print("CHO_CYCLE:",CHO_CYCLE)
+
                 done_tasks = []
                 undone_tasks = []
                 curr_tasks_in_queue = []
@@ -319,8 +397,12 @@ def execution(RUN_TIMES, BREAK_POINT, TRAIN_TIMES, CHO_CYCLE):
                 cpu_list2.append([master2.node_list[i].cpu, master2.node_list[i].cpu_max])
                 mem_list2.append([master2.node_list[i].mem, master2.node_list[i].mem_max])
                 task_num2.append(len(master2.node_list[i].task_queue))
+
             s_grid = np.array([flatten(flatten([deploy_state, [task_num1], cpu_list1, mem_list1])),
-                               flatten(flatten([deploy_state, [task_num2], cpu_list1, mem_list1]))])
+                               flatten(flatten([deploy_state, [task_num2], cpu_list2, mem_list2]))])
+            pic_np_slot = pic_np_list[slot]
+            s_grid = np.concatenate((s_grid, pic_np_slot), axis=1)
+            # print("s_grid = ",s_grid)
 
             # Dispatch decision
             act, valid_action_prob_mat, policy_state, action_choosen_mat, \
@@ -444,8 +526,24 @@ def execution(RUN_TIMES, BREAK_POINT, TRAIN_TIMES, CHO_CYCLE):
 
         all_number = sum(achieve_num) + sum(fail_num)
         throughput_list.append(sum(achieve_num) / float(all_number))
-        print('throughput_list_all =', throughput_list, '\ncurrent_achieve_number =', sum(achieve_num),
+        print('throughput_list_all =', throughput_list[-1], '\ncurrent_achieve_number =', sum(achieve_num),
               ', current_fail_number =', sum(fail_num))
+
+        save_name = "Throughput_Rate1"
+
+        plt.ylim(0, 1)
+        plt.plot(range(1,len(throughput_list)+1), throughput_list, linewidth=1)
+        # plt.title("Throughput_Rate trend for 800 iterations", fontsize=18)
+        plt.xlabel("Frame number", color="g")
+        plt.ylabel("Throughput_Rate", color="g")
+        plt.savefig('result_figure/' + save_name + '.png')
+
+        with open("./result_figure/" + save_name + ".txt","w") as f:
+            f.write("迭代轮数：{%d}\n" % len(throughput_list))
+            f.write("平均值：{%f}\n" % np.mean(throughput_list))
+            f.write("方差：{%f}\n" % np.var(throughput_list))
+
+
         achieve_num = []
         fail_num = []
 
@@ -479,8 +577,8 @@ if __name__ == "__main__":
     ############ Set up according to your own needs  ###########
     # The parameters are set to support the operation of the program, and may not be consistent with the actual system
     RUN_TIMES = 500
-    TASK_NUM = 5000
-    TRAIN_TIMES = 50
-    CHO_CYCLE = 1000
+    TASK_NUM = 400
+    TRAIN_TIMES = 100
+    CHO_CYCLE = 100
     ##############################################################
     execution(RUN_TIMES, TASK_NUM, TRAIN_TIMES, CHO_CYCLE)
